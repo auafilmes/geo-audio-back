@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,25 +8,46 @@ from typing import List
 import shutil
 import uuid
 import os
+import sqlite3
 
 app = FastAPI()
 
-# Adicionando CORS
+# CORS habilitado
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ou especifique: ["https://seusite.netlify.app"]
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Criar pasta static se não existir
+# Criar pasta static
 os.makedirs("static", exist_ok=True)
 
-# Montar pasta static para servir arquivos
+# Servir arquivos estáticos
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Estrutura dos pontos turísticos
+# Conectar SQLite
+conn = sqlite3.connect('points.db', check_same_thread=False)
+cursor = conn.cursor()
+
+# Criar tabela
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS points (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    latitude REAL,
+    longitude REAL,
+    radius REAL,
+    media_type TEXT,
+    media_url TEXT,
+    description TEXT,
+    language TEXT
+)
+''')
+conn.commit()
+
+# Modelo Pydantic
 class TourPoint(BaseModel):
     id: str = None
     name: str
@@ -37,8 +58,6 @@ class TourPoint(BaseModel):
     media_url: str
     description: str
     language: str
-
-points_db: List[TourPoint] = []
 
 @app.post("/upload/")
 async def upload_file(file: UploadFile = File(...)):
@@ -52,19 +71,25 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/points/")
 async def create_point(point: TourPoint):
     point.id = uuid.uuid4().hex
-    points_db.append(point)
+    cursor.execute('''
+        INSERT INTO points (id, name, latitude, longitude, radius, media_type, media_url, description, language)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (point.id, point.name, point.latitude, point.longitude, point.radius, point.media_type, point.media_url, point.description, point.language))
+    conn.commit()
     return point
 
-@app.get("/points/")
+@app.get("/points/", response_model=List[TourPoint])
 async def list_points():
-    return points_db
-
+    cursor.execute('SELECT * FROM points')
+    points = cursor.fetchall()
+    return [TourPoint(id=row[0], name=row[1], latitude=row[2], longitude=row[3],
+                      radius=row[4], media_type=row[5], media_url=row[6],
+                      description=row[7], language=row[8]) for row in points]
 
 @app.delete("/points/{point_id}")
 async def delete_point(point_id: str):
-    global points_db
-    initial_count = len(points_db)
-    points_db = [p for p in points_db if p.id != point_id]
-    if len(points_db) < initial_count:
-        return {{ "status": "deleted", "id": point_id }}
-    return JSONResponse(status_code=404, content={{ "error": "Point not found" }})
+    cursor.execute('DELETE FROM points WHERE id = ?', (point_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Point not found")
+    conn.commit()
+    return {"status": "deleted", "id": point_id}

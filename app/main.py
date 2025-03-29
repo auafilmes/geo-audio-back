@@ -58,3 +58,13 @@ async def create_point(point: TourPoint):
 @app.get("/points/")
 async def list_points():
     return points_db
+
+
+@app.delete("/points/{point_id}")
+async def delete_point(point_id: str):
+    global points_db
+    initial_count = len(points_db)
+    points_db = [p for p in points_db if p.id != point_id]
+    if len(points_db) < initial_count:
+        return {{ "status": "deleted", "id": point_id }}
+    return JSONResponse(status_code=404, content={{ "error": "Point not found" }})

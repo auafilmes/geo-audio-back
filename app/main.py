@@ -26,9 +26,9 @@ app.add_middleware(
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Conexão SQLite persistente no Render
-os.makedirs('/var/data', exist_ok=True)
-conn = sqlite3.connect('/var/data/points.db', check_same_thread=False)
+# Conexão SQLite persistente corrigida para /data
+os.makedirs('/data', exist_ok=True)
+conn = sqlite3.connect('/data/points.db', check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS points (
